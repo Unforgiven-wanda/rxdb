@@ -310,6 +310,7 @@
     "test:browser:custom": " npm run transpile && cross-env CI=true DEFAULT_STORAGE=custom  karma start ./config/karma.conf.js --single-run",
     "test:replication-firestore": "npm run transpile && firebase emulators:exec \"cross-env DEFAULT_STORAGE=dexie mocha --expose-gc --config ./config/.mocharc.js ./test_tmp/replication-firestore.test.js\" --only firestore --project 'rxdb-test'",
     "test:replication-couchdb": "npm run transpile && concurrently \"npm run couch:start\" \"cross-env NATIVE_COUCHDB=5984 DEFAULT_STORAGE=dexie mocha --config ./config/.mocharc.js ./test_tmp/unit/replication-couchdb.test.js\" --success first --kill-others",
+    "test:replication-couchdb3": "npm run transpile && concurrently \"npm run couch3:start\" \"cross-env NATIVE_COUCHDB=5984 COUCH_USERNAME=root COUCH_PASSWORD=root DEFAULT_STORAGE=dexie mocha --config ./config/.mocharc.js ./test_tmp/unit/replication-couchdb.test.js\" --success first --kill-others",
     "test:core": "npm run transpile && mocha ./test_tmp/unit/core.node.js",
     "test:full": "npm run transpile && mocha ./test_tmp/unit/full.node.js",
     "test:typings": "npm run transpile && cross-env DEFAULT_STORAGE=memory NODE_ENV=fast mocha --config ./config/.mocharc.js ./test_tmp/typings.test.js",
@@ -326,6 +327,7 @@
     "test:performance:custom:node": "npm run transpile && cross-env DEFAULT_STORAGE=custom mocha --config ./config/.mocharc.js ./test_tmp/performance.test.js --unhandled-rejections=strict --expose-gc",
     "test:performance": "npm run build && npm run test:performance:lokijs:browser && npm run test:performance:lokijs:node && npm run test:performance:dexie && npm run test:performance:memory:browser && npm run test:performance:memory:node && npm run test:performance:foundationdb",
     "couch:start": "docker run -p 5984:5984 --rm --name rxdb-couchdb couchdb:2.3.1",
+    "couch3:start": "docker run -e COUCHDB_USER=root -e COUCHDB_PASSWORD=root -p 5984:5984 --rm --name rxdb-couchdb couchdb:3.2.2",
     "couch:stop": "docker rm -f rxdb-couchdb",
     "dockertest": "docker run -it -v $(pwd):/usr/src/app markadams/chromium-xvfb-js:latest-onbuild",
     "profile": "npm run transpile && rm -f isolate-* && cross-env STORAGE=memory NODE_ENV=fast NODE_PROF=true mocha --config ./config/.mocharc.js ./test_tmp/performance.test.js --v8-prof --expose-gc && node scripts/profile.js",
@@ -366,7 +368,7 @@
     "rxjs": "^7.8.0"
   },
   "dependencies": {
-    "@babel/runtime": "7.20.13",
+    "@babel/runtime": "7.20.7",
     "@types/clone": "2.1.1",
     "@types/cors": "2.8.13",
     "@types/express": "4.17.15",
@@ -416,7 +418,7 @@
     "@babel/plugin-transform-runtime": "7.19.6",
     "@babel/plugin-transform-spread": "7.20.7",
     "@babel/plugin-transform-template-literals": "7.18.9",
-    "@babel/plugin-transform-typescript": "7.20.13",
+    "@babel/plugin-transform-typescript": "7.20.7",
     "@babel/polyfill": "7.12.1",
     "@babel/preset-env": "7.20.2",
     "@babel/preset-typescript": "7.18.6",
