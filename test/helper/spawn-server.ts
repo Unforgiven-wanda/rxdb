@@ -14,13 +14,42 @@ const PouchDB = require('pouchdb');
 const InMemPouchDB = PouchDB.defaults({
     prefix: '/test_tmp/server-temp-pouch/',
     db: require('memdown'),
-    configPath: 'test_tmp/'
+    configPath: 'test_tmp/',
 });
 const expressPouch = require('express-pouchdb')(InMemPouchDB);
 
 if (ENV_VARIABLES.NATIVE_COUCHDB) {
-    console.log('ENV_VARIABLES.NATIVE_COUCHDB: ' + ENV_VARIABLES.NATIVE_COUCHDB);
+    console.log(
+        'ENV_VARIABLES.NATIVE_COUCHDB: ' + ENV_VARIABLES.NATIVE_COUCHDB
+    );
 }
+
+// In Couchdb 2, uses the regular Fetch
+// In COuchdb 3, adds credentials to the request because:
+// CouchDB 3.0+ will no longer run in "Admin Party"
+// mode. You *MUST* specify an admin user and
+// password
+const fetchPolyfill = (url, options) => {
+    if (!ENV_VARIABLES.COUCH_USERNAME && !ENV_VARIABLES.COUCH_PASSWORD)
+        return fetch(url, options);
+
+    console.log(ENV_VARIABLES.COUCH_USERNAME);
+    const username = ENV_VARIABLES.USERNAME;
+    const password = ENV_VARIABLES.PASSWORD;
+    // flat clone the given options to not mutate the input
+    const optionsWithAuth = Object.assign({}, options);
+    // ensure the headers property exists
+    if (!optionsWithAuth.headers) {
+        optionsWithAuth.headers = {};
+    }
+    // add bearer token to headers
+    optionsWithAuth.headers['Authorization'] = `Basic ${btoa(
+        username + ':' + password
+    )}`;
+
+    // call the original fetch function with our custom options.
+    return fetch(url, optionsWithAuth);
+};
 
 /**
  * Spawns a CouchDB server
@@ -33,7 +62,6 @@ export async function spawn(
     url: string;
     close: () => Promise<void>;
 }> {
-
     /**
      * If a native CouchDB server is used,
      * do not spawn a PouchDB server.
@@ -47,19 +75,16 @@ export async function spawn(
 
         const controller = new AbortController();
         setTimeout(() => controller.abort(), 1000);
-        const putDatabaseResponse = await fetch(
-            url,
-            {
-                method: 'PUT',
-                signal: controller.signal
-            }
-        );
+        const putDatabaseResponse = await fetchPolyfill(url, {
+            method: 'PUT',
+            signal: controller.signal,
+        });
         console.log('# putDatabaseResponse');
         console.dir(await putDatabaseResponse.json());
         return {
             dbName: databaseName,
             url,
-            close: () => PROMISE_RESOLVE_VOID
+            close: () => PROMISE_RESOLVE_VOID,
         };
     }
 
@@ -68,17 +93,14 @@ export async function spawn(
     app.use(path, expressPouch);
     const dbRootUrl = 'http://0.0.0.0:' + port + path;
 
-    return new Promise(res => {
+    return new Promise((res) => {
         const server = app.listen(port, async function () {
             const url = dbRootUrl + '/' + databaseName + '/';
 
             // create the CouchDB database
-            await fetch(
-                url,
-                {
-                    method: 'PUT'
-                }
-            );
+            await fetchPolyfill(url, {
+                method: 'PUT',
+            });
 
             res({
                 dbName: databaseName,
@@ -92,14 +114,14 @@ export async function spawn(
                         server.close();
                         return Promise.resolve();
                     } else {
-                        return new Promise(res2 => {
+                        return new Promise((res2) => {
                             setTimeout(() => {
                                 server.close();
                                 res2();
                             }, 1000);
                         });
                     }
-                }
+                },
             });
         });
     });
