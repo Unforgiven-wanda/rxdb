@@ -264,8 +264,15 @@ describe('replication-couchdb.test.ts', () => {
             const c1 = await humansCollection.create(0);
             const c2 = await humansCollection.create(0);
 
-            await syncLive(c1, server);
-            await syncLive(c2, server);
+            const replicationState1 = await syncLive(c1, server);
+            const replicationState2 = await syncLive(c2, server);
+            const awaitInSync = () => Promise.all([
+                replicationState1.awaitInSync(),
+                replicationState2.awaitInSync()
+            ]).then(() => Promise.all([
+                replicationState1.awaitInSync(),
+                replicationState2.awaitInSync()
+            ]));
 
             const foundPromise = firstValueFrom(
                 c2.find().$.pipe(
@@ -274,6 +281,7 @@ describe('replication-couchdb.test.ts', () => {
             );
 
             await c1.insert(schemaObjects.human('foobar'));
+            await awaitInSync();
 
             // wait until it is on the server
             await waitUntil(async () => {
@@ -283,6 +291,25 @@ describe('replication-couchdb.test.ts', () => {
 
             const endResult = await foundPromise;
             assert.strictEqual(endResult[0].passportId, 'foobar');
+
+            const doc1 = await c1.findOne().exec(true);
+            const doc2 = await c1.findOne().exec(true);
+
+            // edit on one side
+            await doc1.incrementalPatch({ age: 20 });
+            await awaitInSync();
+            assert.strictEqual(doc2.getLatest().age, 20);
+
+            // edit on one side again
+            await doc1.incrementalPatch({ age: 21 });
+            await awaitInSync();
+            assert.strictEqual(doc2.getLatest().age, 21);
+
+
+            // edit on other side
+            await doc2.incrementalPatch({ age: 22 });
+            await awaitInSync();
+            assert.strictEqual(doc1.getLatest().age, 22);
 
             c1.database.destroy();
             c2.database.destroy();
@@ -319,11 +346,7 @@ describe('replication-couchdb.test.ts', () => {
                     batchSize: 60,
                 },
             });
-
-            replicationState.error$.subscribe((err) => {
-                console.log('error');
-                throw Error(err.message);
-            });
+            ensureReplicationHasNoErrors(replicationState);
 
             await replicationState.awaitInitialReplication();
 
@@ -350,6 +373,40 @@ describe('replication-couchdb.test.ts', () => {
             assert.ok(doc);
 
             await replicationState.awaitInSync();
+            await collection.database.destroy();
+        });
+        it('#4319 CouchDB Replication fails on deleted documents', async () => {
+            const server = await SpawnServer.spawn();
+            const collection = await humansCollection.create(0);
+            const replicationState = replicateCouchDB({
+                url: server.url,
+                collection,
+                fetch: fetchWithCouchDBAuth,
+                live: true,
+                pull: {},
+                push: {},
+            });
+            ensureReplicationHasNoErrors(replicationState);
+            await replicationState.awaitInitialReplication();
+
+
+            // insert 3
+            await collection.bulkInsert([
+                schemaObjects.human('1'),
+                schemaObjects.human('2'),
+                schemaObjects.human('3')
+            ]);
+
+            // delete 2
+            await collection.findOne('1').remove();
+            await collection.findOne('2').remove();
+            await replicationState.awaitInSync();
+
+            // check server
+            const serverDocs = await getAllServerDocs(server.url);
+            assert.strictEqual(serverDocs.length, 1);
+            assert.strictEqual(serverDocs[0]._id, '3');
+
             await collection.database.destroy();
         });
     });
